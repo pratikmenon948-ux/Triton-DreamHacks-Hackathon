@@ -1,0 +1,1472 @@
+
+<title>Triton Grid Control</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Instrumentation console palette: desaturated, semantic color reserved for
+     state, one restrained categorical set for the four energy sources. No
+     decorative gradients, no glow, no tinted icon chips. */
+  :root{
+    --bg-deep:#F7F3EA; --bg-panel:#F7F3EA; --bg-panel-raised:#FFFFFF;
+    --border:#DDD5C0; --border-soft:#EAE4D4;
+    --ink-primary:#1A1814; --ink-secondary:#5B5748; --ink-muted:#8F8A78;
+    --accent-solar:#B8862A; --accent-wind:#1F8776; --accent-battery:#33488A; --accent-diesel:#833A29;
+    --status-good:#1E7A46; --status-warn:#8A5A0A; --status-critical:#A82B22;
+    --focus:#33488A;
+    --water:#C7DCE6; --water-line:#AECAD8; --land:#DCD3B6; --land-line:#B9AE88;
+  }
+  /* NOTE: dark mode no longer follows the viewer's OS/browser preference —
+     it previously did via `@media (prefers-color-scheme: dark)`, which meant
+     the dashboard silently looked like the old console theme for anyone
+     whose system was set to dark mode, with no on-page indication why. The
+     warm/light theme above is now what everyone sees by default. Dark mode
+     is still available on request via `data-theme="dark"` on <html> (e.g.
+     for a future manual toggle button) — see the block below. */
+  :root[data-theme="dark"]{
+    --bg-deep:#0A0C10; --bg-panel:#10131A; --bg-panel-raised:#161A22;
+    --border:#2B313C; --border-soft:#1E232C;
+    --ink-primary:#C7CCD3; --ink-secondary:#8B929E; --ink-muted:#575E6A;
+    --accent-solar:#B98A3D; --accent-wind:#3FA79C; --accent-battery:#7B8FD4; --accent-diesel:#C07657;
+    --status-good:#4C9A6A; --status-warn:#C99A3D; --status-critical:#C4534A;
+    --focus:#7B8FD4;
+    --water:#141D26; --water-line:#1C2833; --land:#262A22; --land-line:#3A3F33;
+  }
+ 
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg-deep); color:var(--ink-primary);
+    font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+    font-size:13px; line-height:1.5;
+  }
+  ::selection{ background:var(--focus); color:#fff; }
+  .mono{ font-family:'IBM Plex Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+  .cond{ font-family:'IBM Plex Sans Condensed','IBM Plex Sans',sans-serif; }
+ 
+  a{ color:var(--ink-secondary); }
+  code{ font-family:'IBM Plex Mono',monospace; }
+ 
+  .app{ max-width:1600px; margin:0 auto; padding:0 14px 28px; }
+ 
+  /* ---------- header: plain instrument nameplate, not a branded card ---------- */
+  .topbar{
+    display:flex; align-items:center; gap:16px; padding:8px 2px;
+    background:var(--bg-deep); border-bottom:1px solid var(--border);
+    margin-bottom:12px; flex-wrap:wrap; row-gap:6px;
+  }
+  .brand{ display:flex; align-items:center; gap:9px; }
+  .brand .mark{
+    font-family:'IBM Plex Sans',sans-serif; font-weight:700; font-size:17px;
+    letter-spacing:.01em; color:var(--ink-primary); text-transform:uppercase;
+  }
+  .brand .sub{ color:var(--ink-muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; }
+  .brand .simtag{
+    font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; letter-spacing:.06em;
+    color:var(--ink-muted); border:1px solid var(--border); padding:1px 6px; border-radius:3px;
+  }
+  .topbar .divider{ width:1px; align-self:stretch; background:var(--border); margin:2px 0; }
+  .clock{ display:flex; flex-direction:column; gap:0; }
+  .clock .time{ font-family:'IBM Plex Mono',monospace; font-size:21px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:.01em; }
+  .clock .date{ font-size:10px; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.05em; }
+ 
+  .stat-readout{ display:flex; flex-direction:column; gap:0; }
+  .stat-readout .lbl{ font-size:9px; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.06em; }
+  .stat-readout .val{ font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600; letter-spacing:.01em; }
+  .stat-readout .val.warn{ color:var(--status-warn); }
+  .stat-readout .val.critical{ color:var(--status-critical); }
+ 
+  .health{ display:flex; align-items:center; gap:7px; margin-left:auto; font-size:11px; font-weight:600; letter-spacing:.03em; text-transform:uppercase; }
+  .health .led{ width:7px; height:7px; flex:none; }
+  .health.good{ color:var(--status-good); } .health.good .led{ background:var(--status-good); }
+  .health.warn{ color:var(--status-warn); } .health.warn .led{ background:var(--status-warn); }
+  .health.critical{ color:var(--status-critical); } .health.critical .led{ background:var(--status-critical); }
+ 
+  .controls{ display:flex; align-items:center; gap:10px; }
+  button{ font-family:inherit; cursor:pointer; }
+  .btn{
+    background:var(--bg-panel-raised); color:var(--ink-secondary); border:1px solid var(--border);
+    border-radius:4px; padding:5px 11px; font-size:11px; font-weight:600; letter-spacing:.02em;
+    text-transform:uppercase; transition:background-color .1s, color .1s;
+  }
+  .btn:hover{ color:var(--ink-primary); border-color:var(--ink-muted); }
+  .btn:focus-visible, .seg button:focus-visible{ outline:2px solid var(--focus); outline-offset:1px; }
+  .seg{ display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+  .seg button{
+    background:var(--bg-panel-raised); border:0; color:var(--ink-secondary); padding:5px 9px; font-size:11px; font-weight:600;
+    text-transform:uppercase; letter-spacing:.02em; border-right:1px solid var(--border);
+  }
+  .seg button:last-child{ border-right:0; }
+  .seg button.active{ background:var(--ink-primary); color:var(--bg-panel); }
+ 
+  .grp{ display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+  .grp .btn{ border:0; border-right:1px solid var(--border); border-radius:0; }
+  .grp .btn:last-child{ border-right:0; }
+  .scenario-btn[data-armed="true"]{ background:var(--status-warn); color:var(--bg-panel); border-color:var(--status-warn); }
+ 
+  /* ---------- mission strip: states the problem in one line, above the
+     live decision bar, so PROBLEM and DECISION are both readable without
+     scrolling (see decision-bar below for the "TRITON / DECISION" half). ---------- */
+  .mission-strip{
+    font-size:11.5px; color:var(--ink-secondary); line-height:1.5;
+    padding:9px 2px 12px; border-bottom:1px solid var(--border-soft); margin-bottom:12px;
+  }
+  .mission-strip .m-label{
+    font-weight:700; text-transform:uppercase; letter-spacing:.06em; font-size:10px;
+    color:var(--ink-muted); margin-right:7px;
+  }
+ 
+  /* ---------- decision bar: judge-facing hero ---------- */
+  .decision-bar{
+    display:flex; align-items:center; gap:14px; padding:12px 16px; margin-bottom:12px; border-radius:6px;
+    background:var(--bg-panel-raised); border:1px solid var(--border); flex-wrap:wrap; row-gap:8px;
+  }
+  .decision-risk{ display:flex; align-items:center; gap:7px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; flex:none; }
+  .decision-risk .d{ width:8px; height:8px; flex:none; }
+  .decision-risk.good{ color:var(--status-good); } .decision-risk.good .d{ background:var(--status-good); }
+  .decision-risk.warn{ color:var(--status-warn); } .decision-risk.warn .d{ background:var(--status-warn); }
+  .decision-risk.critical{ color:var(--status-critical); } .decision-risk.critical .d{ background:var(--status-critical); }
+  .decision-main{ display:flex; align-items:baseline; gap:9px; flex:1 1 320px; min-width:0; }
+  .decision-label{ font-size:10px; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.06em; flex:none; }
+  .decision-text{ font-size:12.5px; color:var(--ink-primary); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .demo-controls{ display:flex; gap:8px; }
+ 
+  /* ---------- drawers (Why? / 24h impact) ---------- */
+  .drawer{ background:var(--bg-panel-raised); border:1px solid var(--border); padding:14px 16px; margin-bottom:12px; border-radius:6px; }
+  .trace-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .trace-block .t-label{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-muted); margin-bottom:5px; }
+  .trace-block .t-body{ font-size:11.5px; color:var(--ink-secondary); line-height:1.55; }
+  .trace-block .t-body code{ font-size:10.5px; }
+  .trace-block ul{ margin:0; padding-left:16px; }
+  .impact-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+  .impact-stat .i-label{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted); margin-bottom:4px; }
+  .impact-stat .i-value{ font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; color:var(--ink-primary); }
+  .impact-stat .i-sub{ font-size:10px; color:var(--ink-muted); margin-top:2px; }
+ 
+  /* ---------- architecture modal ---------- */
+  .modal-overlay{ position:fixed; inset:0; background:color-mix(in srgb, var(--bg-deep) 70%, transparent); z-index:50; padding:20px; }
+  .modal-overlay:not([hidden]){ display:flex; align-items:center; justify-content:center; }
+  .modal{ background:var(--bg-panel-raised); border:1px solid var(--border); border-radius:8px; max-width:640px; width:100%; max-height:85vh; overflow-y:auto; }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border); }
+  .modal-body{ padding:14px 16px; }
+  .arch-diagram{ font-size:10.5px; line-height:1.5; color:var(--ink-secondary); background:var(--bg-panel-raised); border:1px solid var(--border-soft); padding:12px; overflow-x:auto; margin:0 0 14px; white-space:pre; }
+  .arch-table{ width:100%; border-collapse:collapse; font-size:11.5px; margin-bottom:12px; }
+  .arch-table th{ text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-muted); padding:0 8px 6px; border-bottom:1px solid var(--border); }
+  .arch-table td{ padding:7px 8px; border-bottom:1px solid var(--border-soft); vertical-align:top; color:var(--ink-secondary); }
+  .arch-table td.sim{ color:var(--ink-secondary); }
+  .arch-table td.real{ color:var(--ink-primary); }
+  .arch-table code{ font-size:10.5px; }
+ 
+  /* ---------- layout grid ---------- */
+  .grid{ display:grid; grid-template-columns:270px 1fr 340px; gap:26px;
+    background:transparent; border:0; }
+  .rail-left, .rail-center, .rail-right{ background:transparent; }
+  @media (max-width:1180px){ .grid{ grid-template-columns:1fr 1fr; } .rail-right{ grid-column:1/-1; } }
+  @media (max-width:760px){ .grid{ grid-template-columns:1fr; } .rail-right{ grid-column:auto; } }
+ 
+  .panel{
+    background:transparent; padding:0; border:0;
+  }
+  .rail-center .panel + .panel{ border-top:0; margin-top:22px; }
+  .bottom-panel{ margin-top:26px; padding-top:20px; border-top:1px solid var(--border-soft); }
+  .panel-title{
+    font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
+    color:var(--ink-muted); margin:0 0 13px; display:flex; align-items:baseline; justify-content:space-between;
+  }
+  .panel-title .aux{ font-weight:500; color:var(--ink-muted); text-transform:none; letter-spacing:0; font-size:10px; }
+  .panel-title .seg{ margin-left:auto; }
+  .panel-title .seg button{ padding:3px 9px; font-size:9.5px; }
+ 
+  /* ---------- telemetry (left rail) ---------- */
+  .telemetry{ width:100%; border-collapse:collapse; }
+  .telemetry td{ padding:8px 0; vertical-align:baseline; border-bottom:1px solid var(--border-soft); }
+  .telemetry tr:last-child td{ border-bottom:0; }
+  .telemetry .tag{ font-size:11px; color:var(--ink-secondary); font-weight:600; white-space:nowrap; }
+  .telemetry .sub{ display:block; font-size:9.5px; color:var(--ink-muted); font-weight:400; margin-top:1px; }
+  .telemetry .val-cell{ text-align:right; }
+  .telemetry .val{ font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; color:var(--ink-primary); white-space:nowrap; }
+  .telemetry .val small{ font-size:9.5px; color:var(--ink-muted); font-weight:500; margin-left:1px; }
+  .telemetry .flag{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; letter-spacing:.03em; }
+  .telemetry .bar-row td{ padding-top:0; padding-bottom:12px; border-bottom:1px solid var(--border-soft); }
+  .telemetry tr:last-child .bar-row td{ border-bottom:0; }
+  .tbar{ height:4px; background:var(--border-soft); margin-top:5px; border-radius:2px; overflow:hidden; }
+  .tbar > i{ display:block; height:100%; border-radius:2px; }
+ 
+  /* ---------- flow diagram ---------- */
+  .flow-wrap{ width:100%; overflow-x:auto; }
+  .flow-svg{ width:100%; min-width:600px; height:210px; display:block; }
+  .flow-node rect{ fill:var(--bg-panel-raised); stroke:var(--border); }
+  .flow-node text.n-label{ fill:var(--ink-muted); font-family:'IBM Plex Sans'; font-size:9.5px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+  .flow-node text.n-value{ fill:var(--ink-primary); font-family:'IBM Plex Mono'; font-size:12.5px; font-weight:600; }
+  .flow-edge{ fill:none; transition:stroke-width .4s ease, opacity .4s ease, stroke .4s ease; }
+  .flow-edge.animated{ stroke-dasharray:5 6; animation:dash 1.1s linear infinite; }
+  @keyframes dash{ to{ stroke-dashoffset:-11; } }
+  @media (prefers-reduced-motion: reduce){ .flow-edge.animated{ animation:none; } }
+  .flow-shed-badge{ font-family:'IBM Plex Mono'; font-size:9px; font-weight:700; fill:var(--status-critical); }
+ 
+  /* ---------- island map ---------- */
+  .map-water{ fill:var(--water); }
+  .map-water-line{ fill:none; stroke:var(--water-line); stroke-width:1; }
+  .map-land{ fill:var(--land); stroke:var(--land-line); stroke-width:1.2; }
+  .map-ridge{ fill:none; stroke:var(--land-line); stroke-width:1; stroke-dasharray:1 4; stroke-linecap:round; }
+  .map-pin circle{ stroke:var(--bg-panel); stroke-width:1.5; }
+  .map-pin text.p-label{ fill:var(--ink-secondary); font-family:'IBM Plex Sans Condensed','IBM Plex Sans'; font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; }
+  .map-pin text.p-value{ fill:var(--ink-primary); font-family:'IBM Plex Mono'; font-size:9.5px; font-weight:600; }
+  .map-pin text.p-flag{ fill:var(--status-critical); font-family:'IBM Plex Mono'; font-size:8.5px; font-weight:700; }
+  .map-legend{ display:flex; flex-wrap:wrap; gap:12px; margin-top:9px; padding-top:9px; border-top:1px solid var(--border-soft); }
+  .map-legend .item{ display:flex; align-items:center; gap:5px; font-size:10px; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.02em; }
+  .map-legend .sw{ width:8px; height:8px; border-radius:50%; flex:none; }
+ 
+  /* ---------- chart ---------- */
+  .chart-wrap{ width:100%; overflow-x:auto; }
+  .chart-svg{ width:100%; min-width:600px; height:220px; display:block; overflow:visible; }
+  .chart-axis-label{ fill:var(--ink-muted); font-family:'IBM Plex Mono'; font-size:9.5px; }
+  .gridline{ stroke:var(--border-soft); stroke-width:1; }
+  .series-path{ fill:none; stroke-width:1.5; }
+  .series-area{ opacity:.08; }
+  .legend{ display:flex; gap:16px; flex-wrap:wrap; margin-top:9px; padding-top:9px; border-top:1px solid var(--border-soft); }
+  .legend .item{ display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--ink-secondary); text-transform:uppercase; letter-spacing:.02em; }
+  .legend .swatch{ width:12px; height:2px; }
+  .legend .swatch.dashed{ background:none; border-top:2px dashed var(--ink-muted); height:0; }
+  .chart-tooltip{
+    position:absolute; pointer-events:none; background:var(--bg-panel-raised); border:1px solid var(--border);
+    border-radius:4px; box-shadow:0 2px 8px rgba(26,24,20,.08);
+    padding:6px 9px; font-size:10.5px; opacity:0; transition:opacity .1s;
+    font-family:'IBM Plex Mono',monospace; white-space:nowrap; z-index:5;
+  }
+  .chart-tooltip .tt-row{ display:flex; justify-content:space-between; gap:12px; }
+  .chart-tooltip .tt-row + .tt-row{ margin-top:2px; }
+  .chart-hover-line{ stroke:var(--ink-muted); stroke-width:1; stroke-dasharray:2 2; opacity:0; }
+ 
+  /* ---------- event log (right rail) ---------- */
+  .rail-right{ position:relative; }
+  .eventlog{ width:100%; border-collapse:collapse; }
+  .eventlog-wrap{ max-height:440px; overflow-y:auto; }
+  .eventlog td{ padding:5px 6px; border-bottom:1px solid var(--border-soft); vertical-align:top; font-size:11px; }
+  .eventlog tr:last-child td{ border-bottom:0; }
+  .eventlog .ts{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:var(--ink-muted); white-space:nowrap; padding-top:6px; }
+  .eventlog .sev{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; font-weight:700; white-space:nowrap; padding-top:6px; }
+  .eventlog .sev.info{ color:var(--ink-muted); }
+  .eventlog .sev.warn{ color:var(--status-warn); }
+  .eventlog .sev.critical{ color:var(--status-critical); }
+  .eventlog .msg{ color:var(--ink-secondary); line-height:1.45; }
+  .eventlog tr.critical{ background:color-mix(in srgb, var(--status-critical) 7%, transparent); }
+  .eventlog-empty{ font-size:11px; color:var(--ink-muted); padding:6px 0; }
+  .agent-note{ font-size:10px; color:var(--ink-muted); margin-top:10px; line-height:1.5; border-top:1px solid var(--border-soft); padding-top:9px; }
+ 
+  .ask-box{ display:flex; align-items:center; gap:0; margin-bottom:12px; border:1px solid var(--border); background:var(--bg-panel-raised); border-radius:4px; overflow:hidden; }
+  .ask-box .prompt{ font-family:'IBM Plex Mono',monospace; color:var(--ink-muted); padding:0 0 0 8px; font-size:12px; }
+  .ask-box input{
+    flex:1; background:transparent; border:0; padding:7px 6px;
+    color:var(--ink-primary); font-family:'IBM Plex Mono',monospace; font-size:11.5px;
+  }
+  /* Keyboard focus indicator: the input's own native outline is suppressed
+     because it looks broken clipped inside the bordered ask-box, but focus
+     must still be visible somewhere — :focus-within lights up the whole box
+     instead, and the submit button keeps its own explicit ring. */
+  .ask-box:focus-within{ outline:2px solid var(--focus); outline-offset:1px; border-radius:5px; }
+  .ask-box input:focus{ outline:none; }
+  .ask-box input::placeholder{ color:var(--ink-muted); }
+  .ask-box button{ background:var(--ink-primary); color:var(--bg-panel-raised); border:0;
+    padding:0 14px; height:32px; font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; }
+  .ask-box button:hover{ background:var(--ink-secondary); }
+  .ask-box button:focus-visible{ outline:2px solid var(--focus); outline-offset:-2px; }
+ 
+  /* ---------- sector strip ---------- */
+  .sectors-table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+  .sectors-table th{ text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-muted); font-weight:600; padding:0 10px 7px; border-bottom:1px solid var(--border); }
+  .sectors-table td{ padding:7px 10px; border-bottom:1px solid var(--border-soft); vertical-align:middle; }
+  .sectors-table tr:last-child td{ border-bottom:0; }
+  .sectors-table tr:hover td{ background:var(--bg-panel-raised); }
+  .sectors-table .kw{ font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; }
+  .tier-tag{ font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:700; letter-spacing:.02em; }
+  .tier-tag.t0{ color:var(--status-critical); }
+  .tier-tag.t1{ color:var(--accent-battery); }
+  .tier-tag.t2{ color:var(--ink-muted); }
+  .status-chip{ display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.03em; }
+  .status-chip .d{ width:6px; height:6px; }
+  .status-chip.normal{ color:var(--ink-muted); } .status-chip.normal .d{ background:var(--status-good); }
+  .status-chip.shed{ color:var(--status-critical); } .status-chip.shed .d{ background:var(--status-critical); }
+  .bar-cell{ display:flex; align-items:center; gap:8px; }
+  .bar-track{ width:64px; height:4px; background:var(--border-soft); }
+  .bar-fill{ height:100%; }
+ 
+  .footer-note{ margin-top:16px; padding:0 16px; font-size:10.5px; color:var(--ink-muted); text-align:center; line-height:1.6; }
+  .footer-note a{ color:var(--ink-secondary); text-decoration:underline; text-underline-offset:2px; }
+ 
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); }
+  ::-webkit-scrollbar-track{ background:transparent; }
+</style>
+ 
+<div class="app">
+ 
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">Triton EMS</span>
+      <span class="sub">Kailoa Isl. · Unit 1</span>
+      <span class="simtag">SIMULATION</span>
+    </div>
+    <div class="divider"></div>
+    <div class="clock">
+      <span class="time mono" id="simTime">--:--</span>
+      <span class="date" id="simDate">—</span>
+    </div>
+    <div class="divider"></div>
+    <div class="stat-readout">
+      <span class="lbl">Sys Freq</span>
+      <span class="val mono" id="statFreq">60.00 Hz</span>
+    </div>
+    <div class="stat-readout">
+      <span class="lbl">Bus kV</span>
+      <span class="val mono" id="statVoltage">13.80 kV</span>
+    </div>
+    <div class="divider"></div>
+    <div class="controls">
+      <div class="seg" id="speedSeg" role="group" aria-label="Simulation speed">
+        <button data-speed="0" aria-label="Pause simulation">Hold</button>
+        <button data-speed="1" class="active" aria-label="Run simulation at normal speed">1×</button>
+        <button data-speed="4" aria-label="Run simulation at 4 times speed">4×</button>
+        <button data-speed="20" aria-label="Run simulation at 20 times speed">20×</button>
+      </div>
+      <div class="grp" role="group" aria-label="Scenario triggers">
+        <button class="btn scenario-btn" data-scenario="storm" title="Inject a storm: cloud cover and wind spike, solar drops" aria-label="Trigger storm scenario: cloud cover and wind spike, solar drops">Storm</button>
+        <button class="btn scenario-btn" data-scenario="generator_fault" title="Diesel genset fails for 90 minutes" aria-label="Trigger generator fault scenario: diesel genset fails for 90 minutes">Genset flt</button>
+        <button class="btn scenario-btn" data-scenario="sensor_stuck" title="Desalination flow sensor freezes" aria-label="Trigger sensor fault scenario: desalination flow sensor freezes">Sensor flt</button>
+        <button class="btn" data-scenario="clear" title="Clear active scenario" aria-label="Clear active scenario, return to normal operation">Clear</button>
+      </div>
+    </div>
+    <div class="health good" id="healthPill"><span class="led"></span><span id="healthLabel">Nominal</span></div>
+  </div>
+ 
+  <div class="mission-strip">
+    <span class="m-label">The problem</span>Off-grid islands lose critical services &mdash; hospitals, water, comms &mdash; the moment a storm cuts both power and the ability to call for help.
+    <span class="m-label" style="margin-left:10px;">Triton</span>dispatches solar, wind, battery and diesel automatically to protect them, and explains every decision it makes, in real time.
+  </div>
+ 
+  <!-- DECISION BAR: the judge-facing "what is TRITON doing and why" hero.
+       Everything above the fold should let a reader answer PROBLEM -> TRITON
+       -> SIMULATION -> DECISION -> ACTION -> IMPACT without scrolling. -->
+  <div class="decision-bar">
+    <div class="decision-risk" id="decisionRisk"><span class="d"></span><span id="decisionRiskLabel">Nominal</span></div>
+    <div class="decision-main">
+      <span class="decision-label">Current decision</span>
+      <span class="decision-text" id="decisionText">—</span>
+    </div>
+    <button class="btn" id="whyBtn" aria-expanded="false" aria-label="Show decision trace explaining the current dispatch decision">Why? ▾</button>
+    <button class="btn" id="impactBtn" aria-label="Show 24-hour impact summary">24h impact</button>
+    <button class="btn" id="archBtn" aria-label="Show system architecture explanation">Architecture</button>
+    <div class="demo-controls" id="demoControls">
+      <button class="btn" id="demoStartBtn" aria-label="Run scripted crisis demo">Run crisis demo</button>
+    </div>
+  </div>
+ 
+  <div class="drawer" id="whyDrawer" hidden>
+    <p class="panel-title">Decision trace <span class="aux">observation → constraints → decision → action → result</span></p>
+    <div class="trace-grid" id="traceGrid"></div>
+  </div>
+ 
+  <div class="drawer" id="impactDrawer" hidden>
+    <p class="panel-title">24-hour impact <span class="aux">computed from this session's running history, not a canned figure</span></p>
+    <div class="impact-grid" id="impactGrid"></div>
+  </div>
+ 
+  <div class="grid">
+ 
+    <!-- LEFT RAIL: telemetry -->
+    <div class="rail-left">
+      <div class="panel">
+        <p class="panel-title">Telemetry<span class="aux mono" id="telemetryUpdated">—</span></p>
+        <table class="telemetry" id="gauges"></table>
+      </div>
+    </div>
+ 
+    <!-- CENTER: flow + chart -->
+    <div class="rail-center">
+      <div class="panel">
+        <p class="panel-title">
+          <span id="viewTitle">Site map <span class="aux">Kailoa Island — fictional, illustrative layout</span></span>
+          <span class="seg" id="viewSeg" role="group" aria-label="Diagram view">
+            <button data-view="map" class="active" aria-label="Show island map view">Map</button>
+            <button data-view="schematic" aria-label="Show one-line schematic view">Schematic</button>
+          </span>
+        </p>
+        <div id="mapView">
+          <div class="flow-wrap"><svg class="flow-svg" id="mapSvg" viewBox="0 0 760 380" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Illustrative map of Kailoa Island showing live simulated readings for solar, wind, battery/genset, hospital, desalination, and village load sites."></svg></div>
+          <div class="map-legend" id="mapLegend"></div>
+        </div>
+        <div class="flow-wrap" id="schematicView" hidden><svg class="flow-svg" id="flowSvg" viewBox="0 0 720 210" preserveAspectRatio="xMidYMid meet" role="img" aria-label="One-line electrical diagram showing instantaneous power flow from solar, wind, diesel, and battery to the island bus, and onward to Tier 0, 1, and 2 demand."></svg></div>
+      </div>
+      <div class="panel">
+        <p class="panel-title">Generation vs. demand <span class="aux">24h trend</span></p>
+        <div class="chart-wrap" style="position:relative;">
+          <svg class="chart-svg" id="chartSvg" viewBox="0 0 900 230" preserveAspectRatio="none" role="img" aria-label="Line chart of solar, wind, diesel generation and total demand over the trailing 24 hours of simulated time."></svg>
+          <div class="chart-tooltip" id="chartTooltip"></div>
+        </div>
+        <div class="legend" id="chartLegend"></div>
+      </div>
+    </div>
+ 
+    <!-- RIGHT RAIL: event log -->
+    <div class="rail-right">
+      <div class="panel">
+        <p class="panel-title">Event log</p>
+        <div class="ask-box">
+          <span class="prompt">&gt;</span>
+          <input id="askInput" type="text" placeholder="query, e.g. why was load shed" aria-label="Ask a question about the current grid decision" />
+          <button id="askBtn" aria-label="Submit question">Submit</button>
+        </div>
+        <!-- aria-live/aria-atomic: screen readers announce new event-log rows as
+             they arrive, without re-reading the whole log on every update
+             (aria-atomic="false" means only the changed/added content is
+             announced, not the entire region each time). role="log" is the
+             correct ARIA role for a chronological, appended-to feed like this. -->
+        <div class="eventlog-wrap" role="log" aria-live="polite" aria-atomic="false" aria-label="Event log">
+          <table class="eventlog"><tbody id="agentFeed"></tbody></table>
+        </div>
+        <p class="agent-note">This panel runs a deterministic local router, not Claude — a published Artifact cannot call the Anthropic API (browser-side network calls are sandboxed). The Python reference backend calls the live Claude API for this same briefing/triage/Q&amp;A role, grounded on the identical decision trace, when <code>ANTHROPIC_API_KEY</code> is set — see <code>claude_advisor.py</code> and the "Architecture" note above.</p>
+      </div>
+    </div>
+ 
+  </div>
+ 
+  <!-- BOTTOM: sector table -->
+  <div class="panel bottom-panel">
+    <p class="panel-title">Demand sectors</p>
+    <div style="overflow-x:auto;">
+      <table class="sectors-table" id="sectorsTable">
+        <thead><tr><th>Sector</th><th>Priority</th><th>Load</th><th>Share sheddable</th><th>Status</th></tr></thead>
+        <tbody id="sectorsBody"></tbody>
+      </table>
+    </div>
+  </div>
+ 
+  <p class="footer-note">Simulated island microgrid for demonstration — Kailoa Island is fictional. Dispatch logic ports the deterministic optimizer from the Python reference backend; sensor readings are a physically-modeled simulation, not live hardware.<br>Built for DreamHacks — Challenge Track: <strong>[add your track name here]</strong>.</p>
+ 
+</div>
+ 
+<div class="modal-overlay" id="archOverlay" hidden>
+  <div class="modal" role="dialog" aria-label="Architecture">
+    <div class="modal-head">
+      <p class="panel-title" style="margin:0;">How Triton is built</p>
+      <button class="btn" id="archCloseBtn">Close</button>
+    </div>
+    <div class="modal-body">
+      <pre class="arch-diagram mono">Sensors (15-min telemetry, simulated)
+      │
+      ▼
+Deterministic optimizer  ──▶ every control decision: merit-order dispatch,
+(optimizer.py / this page)   battery buffering, priority-tiered load shedding.
+      │                      Ordinary, testable, auditable code.
+      │                      An LLM never touches a breaker.
+      ▼
+Claude reasoning layer  ───▶ 1. plain-language operator briefing
+(claude_advisor.py)          2. anomaly triage over correlated signals
+      │                      3. grounded Q&amp;A over the decision trace
+      ▼
+Dashboard (this page)   ───▶ gauges, map, chart, decision trace, event log</pre>
+      <table class="arch-table">
+        <thead><tr><th>Component</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td>Sensor readings</td><td class="sim">Simulated — physically-modeled solar/wind/tide curves, not live hardware.</td></tr>
+          <tr><td>Dispatch decisions</td><td class="real">Real code — the merit-order optimizer running in this page is a direct JS port of <code>optimizer.py</code>, not a mockup.</td></tr>
+          <tr><td>Decision trace / "Why?"</td><td class="real">Real — generated by the same dispatch pass you're watching, not written after the fact.</td></tr>
+          <tr><td>Event log / Q&amp;A in this page</td><td class="sim">Deterministic local router — a published Artifact's sandbox blocks it from calling the Anthropic API.</td></tr>
+          <tr><td>Live Claude reasoning</td><td class="real">Real, but only in the Python backend (<code>claude_advisor.py</code>) — run it locally with <code>ANTHROPIC_API_KEY</code> set to see Claude answer the identical questions over the identical trace.</td></tr>
+          <tr><td>72-hour KPI run</td><td class="real">Real output from that Python backend, checked into <code>output/</code> and validated by an automated test suite.</td></tr>
+        </tbody>
+      </table>
+      <p class="agent-note">This is deliberate, not a limitation to apologize for: a safety-critical dispatch loop should never depend on network access or an LLM to keep the lights on. This page proves that decoupling by running the full control loop with zero network calls of any kind.</p>
+    </div>
+  </div>
+</div>
+ 
+<script>
+(function(){
+  "use strict";
+ 
+  /* ============================== MODEL ============================== */
+  const SECTORS = [
+    {name:"Hospital & Clinic", tier:0, base:42, varf:0.05, peak:[8,9,10,18,19], mult:1.15, shed:0.0},
+    {name:"Desalination Plant", tier:0, base:95, varf:0.10, peak:[6,7,8,17,18], mult:1.2, shed:0.0},
+    {name:"Comms & Emergency", tier:0, base:12, varf:0.03, peak:[], mult:1.0, shed:0.0},
+    {name:"Village Households (N)", tier:1, base:140, varf:0.20, peak:[6,7,18,19,20,21], mult:1.6, shed:0.15},
+    {name:"School", tier:1, base:18, varf:0.15, peak:[8,9,10,11,12,13], mult:1.4, shed:0.30},
+    {name:"Fishery Cold Storage", tier:1, base:55, varf:0.08, peak:[], mult:1.0, shed:0.10},
+    {name:"Village Households (S)", tier:1, base:125, varf:0.20, peak:[6,7,18,19,20,21], mult:1.6, shed:0.15},
+    {name:"Tourism / Commercial", tier:2, base:70, varf:0.30, peak:[9,10,17,18,19,20], mult:1.5, shed:0.55},
+    {name:"EV & Boat Charging", tier:2, base:30, varf:0.40, peak:[22,23,0,1], mult:2.0, shed:0.90},
+    {name:"Ice Plant", tier:2, base:40, varf:0.15, peak:[], mult:1.0, shed:0.70},
+  ];
+ 
+  const CAP = { solar:650, wind:260, battery:2200, diesel:720, tank:7000 };
+  const RESERVE_FLOOR=20, EMERGENCY_FLOOR=5, CHG_EFF=0.94, DIS_EFF=0.96, FUEL_L_PER_KWH=0.28, STEP_H=0.25;
+  const RESUPPLY_THRESHOLD_L=1500, RESUPPLY_LEAD_HOURS=14;
+ 
+  let rngState = 42;
+  function rng(){ rngState = (rngState*1103515245+12345)&0x7fffffff; return rngState/0x7fffffff; }
+  function ru(a,b){ return a+(b-a)*rng(); }
+ 
+  let simT = new Date(2026,7,24,0,0,0);
+  let battery = 68.0, fuel = CAP.tank*0.8;
+  let shedPointer = 0;
+  let scenario = null, scenarioTicksLeft = 0, stuckVal = null;
+  let resupplyTicksLeft = null; // null = no delivery in transit
+  let demo = null; // crisis-demo state: {step, ticksLeft, savedSpeed, paused} — null when not running
+  let speed = 1; // ticks of sim per real second-ish (handled via interval)
+  let history = []; // last N dispatch snapshots for chart
+  const HISTORY_MAX = 96; // 24h at 15-min steps
+  let lastDispatch = null, lastState = null;
+  let agentLog = []; // {t, sev, text}
+ 
+  function solarModel(hourFloat, cloud){
+    let base;
+    if(hourFloat < 5.75 || hourFloat > 18.25) base = 0;
+    else { const x=(hourFloat-12.0)/6.25; base = Math.max(0, Math.cos(x*Math.PI/2)) ** 1.3; }
+    return 1000 * base * (1-0.85*cloud);
+  }
+ 
+  function tick(){
+    simT = new Date(simT.getTime() + 15*60000);
+    const hour = simT.getHours() + simT.getMinutes()/60;
+    const dayOfYear = Math.floor((simT - new Date(simT.getFullYear(),0,0))/86400000);
+ 
+    const stormActive = scenario==="storm" && scenarioTicksLeft>0;
+    let cloud = Math.min(0.95, Math.max(0.05, 0.35 + 0.25*Math.sin(dayOfYear+hour/4) + ru(-0.08,0.08)));
+    if(stormActive) cloud = Math.min(0.98, cloud+0.5);
+ 
+    let irr = solarModel(hour, cloud) * ru(0.97,1.03);
+    const solarKw = Math.min(CAP.solar, CAP.solar*(irr/1000));
+ 
+    let windBase = 6.5 + 3.0*Math.sin(hour/24*2*Math.PI+1.0) + ru(-1.2,1.2);
+    if(stormActive) windBase += 9.0;
+    const windSpeed = Math.max(0, windBase);
+    let windKw;
+    if(windSpeed<3 || windSpeed>25) windKw=0;
+    else if(windSpeed>=12) windKw=CAP.wind;
+    else { const f=((windSpeed-3)/9)**2; windKw=CAP.wind*f; }
+ 
+    const ambientTemp = 27.0 + 3.5*Math.sin((hour-9)/24*2*Math.PI) + ru(-0.6,0.6) - (stormActive?2:0);
+ 
+    const faults = [];
+    let dieselAvailable = true;
+    if(scenario==="generator_fault" && scenarioTicksLeft>0){ dieselAvailable=false; faults.push("diesel_genset_fault"); }
+ 
+    let desalFlow = 420 + 40*Math.sin(hour/24*2*Math.PI) + ru(-15,15);
+    const desalPressure = 4.2+ru(-0.15,0.15);
+    if(scenario==="sensor_stuck" && scenarioTicksLeft>0){
+      if(stuckVal===null) stuckVal = desalFlow;
+      desalFlow = stuckVal;
+      faults.push("desal_flow_sensor_stuck");
+    }
+ 
+    if(scenarioTicksLeft>0){
+      scenarioTicksLeft--;
+      if(scenarioTicksLeft===0){ scenario=null; stuckVal=null; }
+    }
+ 
+    const sectorLoads = {};
+    for(const s of SECTORS){
+      const isPeak = s.peak.includes(Math.floor(hour));
+      const m = isPeak ? s.mult : 1.0;
+      const noise = 1 + ru(-s.varf, s.varf);
+      sectorLoads[s.name] = s.base*m*noise;
+    }
+    const demand = Object.values(sectorLoads).reduce((a,b)=>a+b,0);
+    const renewable = solarKw + windKw;
+ 
+    // Diesel resupply: a real island tank is refilled by a periodic supply
+    // boat, not an infinite reservoir. Below threshold a delivery is called
+    // in and arrives after RESUPPLY_LEAD_HOURS. Mirrors _resupply_diesel()
+    // in sensors.py — without this, fuel-limited diesel dispatch (below)
+    // would run the tank dry once and never recover.
+    let resupplyEtaHours = null;
+    if(resupplyTicksLeft === null){
+      if(fuel < RESUPPLY_THRESHOLD_L) resupplyTicksLeft = RESUPPLY_LEAD_HOURS*4;
+    }
+    if(resupplyTicksLeft !== null){
+      resupplyTicksLeft--;
+      if(resupplyTicksLeft <= 0){ fuel = CAP.tank; resupplyTicksLeft = null; }
+      else resupplyEtaHours = resupplyTicksLeft/4;
+    }
+ 
+    // ---- dispatch (mirrors optimizer.py's merit order + DecisionTrace) ----
+    let residual = demand - renewable;
+    let socKwh = battery/100*CAP.battery;
+    let batteryFlow=0, dieselKw=0, shedKw=0, shedSectors=[], tier0Risk=false, unmetKw=0, notes=[];
+    const socBeforePct = battery;
+    const constraints = [
+      `battery reserve floor ${RESERVE_FLOOR}% (emergency floor ${EMERGENCY_FLOOR}%)`,
+      `diesel genset capacity ${CAP.diesel} kW`,
+      "Tier-0 sectors (hospital, desalination, comms) are never automatically shed",
+    ];
+    let decision = "";
+ 
+    if(residual < 0){
+      const surplus = -residual;
+      const headroom = CAP.battery - socKwh;
+      const chargeable = Math.min(surplus, headroom/STEP_H/CHG_EFF);
+      socKwh += chargeable*STEP_H*CHG_EFF;
+      batteryFlow = -chargeable;
+      const spilled = surplus-chargeable;
+      decision = "renewable surplus: charging battery";
+      if(spilled>1){
+        decision = "renewable surplus exceeds battery headroom: charging battery, curtailing remainder";
+        notes.push(`Curtailed ${spilled.toFixed(0)} kW of renewable surplus (battery full).`);
+      }
+    } else {
+      let shortfall = residual;
+      const usable = Math.max(0, socKwh - RESERVE_FLOOR/100*CAP.battery);
+      const maxDis = usable*DIS_EFF/STEP_H;
+      const fromBatt = Math.min(shortfall, maxDis);
+      socKwh -= fromBatt*STEP_H/DIS_EFF;
+      batteryFlow = fromBatt;
+      shortfall -= fromBatt;
+      decision = "shortfall covered by direct renewables + battery discharge";
+ 
+      const fuelLimitedKw = fuel/FUEL_L_PER_KWH/STEP_H;
+      const requestedDieselKw = Math.min(shortfall, CAP.diesel);
+      if(shortfall>1 && dieselAvailable && fuelLimitedKw>0.5){
+        dieselKw = Math.min(requestedDieselKw, fuelLimitedKw);
+        shortfall -= dieselKw;
+        if(dieselKw>0){
+          decision = "shortfall exceeds safe battery discharge: dispatching diesel genset";
+          notes.push(`Diesel genset dispatched at ${dieselKw.toFixed(0)} kW to cover shortfall.`);
+          if(dieselKw < requestedDieselKw-1) notes.push("Diesel output fuel-limited — tank nearly empty.");
+        }
+      } else if(shortfall>1 && dieselAvailable && fuelLimitedKw<=0.5){
+        notes.push("Diesel genset out of fuel — leaning harder on battery/shedding.");
+      } else if(shortfall>1 && !dieselAvailable){
+        decision = "shortfall persists and diesel is unavailable (fault): drawing harder on battery";
+        notes.push("Diesel genset unavailable (fault) — leaning harder on battery/shedding.");
+      }
+ 
+      if(shortfall>1){
+        const emKwh = Math.max(0, socKwh-EMERGENCY_FLOOR/100*CAP.battery);
+        const emKw = Math.min(shortfall, emKwh*DIS_EFF/STEP_H);
+        if(emKw>0){
+          socKwh -= emKw*STEP_H/DIS_EFF;
+          batteryFlow += emKw;
+          shortfall -= emKw;
+          decision = "diesel and normal battery reserve insufficient: drawing into emergency battery reserve";
+          notes.push(`Drew battery into emergency reserve (${emKw.toFixed(0)} kW) to avoid shedding load.`);
+        }
+      }
+ 
+      if(shortfall>1){
+        const res = shedLoad(sectorLoads, shortfall);
+        shedKw = res.shed; shedSectors = res.sectors; tier0Risk = res.tier0Risk;
+        shortfall -= shedKw;
+        if(shedSectors.length){
+          decision = "all generation and storage exhausted: shedding load by priority tier";
+          notes.push(`Load-shed ${shedKw.toFixed(0)} kW across: ${shedSectors.join(", ")}.`);
+        }
+        if(tier0Risk){
+          decision = "shed capacity exhausted: Tier-0 critical load now at risk";
+          notes.push("CRITICAL: shedding capacity exhausted — Tier-0 critical load is now at risk.");
+          if(shortfall>1){
+            notes.push(`${shortfall.toFixed(0)} kW of demand remains unserved beyond all shed capacity.`);
+            unmetKw = shortfall;
+          }
+        }
+      }
+    }
+ 
+    socKwh = Math.max(0, Math.min(CAP.battery, socKwh));
+    battery = socKwh/CAP.battery*100;
+ 
+    if(dieselKw>0) fuel = Math.max(0, fuel - dieselKw*STEP_H*FUEL_L_PER_KWH);
+    if(resupplyEtaHours !== null) notes.push(`Diesel resupply in transit — fuel delivery expected in ~${resupplyEtaHours.toFixed(0)}h.`);
+    else if(fuel < RESUPPLY_THRESHOLD_L) notes.push(`Diesel fuel low: ${fuel.toFixed(0)} L remaining — resupply will be called automatically below threshold.`);
+ 
+    if(!decision) decision = "demand fully met from available generation and storage";
+ 
+    const served = demand - shedKw - unmetKw;
+    const cleanFraction = served<=0 ? 0 : Math.max(0, Math.min(1, (served-dieselKw)/served));
+    const directRenFraction = served<=0 ? 0 : Math.max(0, Math.min(1, Math.min(renewable,served)/served));
+ 
+    const trace = {
+      observation: {demandKw:demand, renewableKw:renewable, residualKw:residual,
+        batterySocPctBefore:socBeforePct, dieselAvailable, sensorFaults:faults},
+      constraints,
+      decision,
+      actions: notes.length ? notes.slice() : ["No corrective action required this cycle."],
+      result: {batterySocPctAfter:battery, dieselKw, shedKw, shedSectors, unmetKw,
+        renewableFraction:cleanFraction, tier0Risk},
+    };
+ 
+    const state = {t:new Date(simT), solarKw, windKw, windSpeed, cloud, ambientTemp, storm:stormActive, faults,
+      desalFlow, desalPressure, sectorLoads, demand, renewable, dieselResupplyEtaHours:resupplyEtaHours};
+    const dispatch = {demand, renewable, batteryFlow, dieselKw, shedKw, shedSectors, tier0Risk, unmetKw,
+      batterySoc:battery, fuel, cleanFraction, directRenFraction, notes, trace};
+ 
+    lastState = state; lastDispatch = dispatch;
+    history.push({state, dispatch});
+    if(history.length>HISTORY_MAX) history.shift();
+ 
+    runAgent(state, dispatch);
+    render();
+    demoTick();
+  }
+ 
+  function shedLoad(sectorLoads, needed){
+    let remaining = needed, shedTotal=0, shedSectors=[];
+    for(const tier of [2,1]){
+      let sectors = SECTORS.filter(s=>s.tier===tier);
+      if(tier===1){
+        const p = shedPointer % sectors.length;
+        sectors = sectors.slice(p).concat(sectors.slice(0,p));
+        shedPointer++;
+      }
+      for(const s of sectors){
+        if(remaining<=1) break;
+        const load = sectorLoads[s.name]||0;
+        const sheddable = load*s.shed;
+        const take = Math.min(sheddable, remaining);
+        if(take>0.5){ shedTotal+=take; remaining-=take; shedSectors.push(s.name); }
+      }
+      if(remaining<=1) break;
+    }
+    return {shed:shedTotal, sectors:shedSectors, tier0Risk: remaining>1};
+  }
+ 
+  /* ============================== AGENT (fallback reasoning, ported from claude_advisor.py) ============================== */
+  function fmtTime(d){
+    return d.toLocaleString('en-US',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
+  }
+ 
+  function agentEntryHtml(a){
+    const sevTag = a.sev==='critical' ? 'CRIT' : a.sev.toUpperCase();
+    return `<tr class="${a.sev==='critical'?'critical':''}">
+        <td class="ts">${fmtTime(a.t)}</td>
+        <td class="sev ${a.sev}">[${sevTag}]</td>
+        <td class="msg">${a.text}</td>
+      </tr>`;
+  }
+ 
+  // Inserts incrementally (rather than rebuilding the whole log on every
+  // tick) so a full innerHTML rebuild doesn't happen dozens of times a
+  // second at fast-forward speeds. Also drops back-to-back duplicate
+  // messages (e.g. the same critical alert repeating every tick while a
+  // fault is ongoing) so the log reads as discrete events, not a spool.
+  function pushAgent(sev, text){
+    if(agentLog.length && agentLog[0].sev===sev && agentLog[0].text===text) return;
+    const entry = {t:new Date(simT), sev, text};
+    agentLog.unshift(entry);
+    if(agentLog.length>60) agentLog.pop();
+    const feed = document.getElementById('agentFeed');
+    if(feed){
+      const placeholder = feed.querySelector('.eventlog-empty-row');
+      if(placeholder) placeholder.remove();
+      feed.insertAdjacentHTML('afterbegin', agentEntryHtml(entry));
+      while(feed.children.length>30) feed.removeChild(feed.lastElementChild);
+    }
+  }
+ 
+  let ticksSinceBrief = 0;
+  function runAgent(state, dispatch){
+    // Anomaly triage — reasons over correlated signals, not single thresholds.
+    const recentFlow = history.slice(-6).map(h=>h.state.desalFlow);
+    if(recentFlow.length>=4 && (Math.max(...recentFlow)-Math.min(...recentFlow) < 0.5)){
+      pushAgent("warn", `Desalination flow reading unchanged for ${recentFlow.length} cycles despite normal demand variation — pattern matches a STUCK SENSOR, not a real process change. Recommend a technician verify the flow meter before trusting flow-based desal decisions.`);
+    } else if(state.faults.includes("desal_flow_sensor_stuck")){
+      pushAgent("warn", "Desalination flow sensor flagged stuck. Pressure is still varying normally, which points to the meter having failed rather than the pump — low risk to water supply, but flow-based logic should fall back to pressure until repaired.");
+    }
+    if(state.faults.includes("diesel_genset_fault") && dispatch.batterySoc<25){
+      pushAgent("critical", "Diesel genset is down AND battery SOC is falling toward its floor at the same time — that combination, not either signal alone, is what makes this urgent: expect load-shedding within 1-2 cycles unless the genset is restored.");
+    }
+    if(dispatch.tier0Risk){
+      pushAgent("critical", "Tier-0 critical load (hospital / desal / comms) is at risk after exhausting all shed capacity. Highest-severity state the system can reach — recommend manual intervention rather than waiting on automatic recovery.");
+    } else if(dispatch.shedSectors.length){
+      pushAgent("warn", `Shedding ${dispatch.shedKw.toFixed(0)} kW across ${dispatch.shedSectors.join(", ")} to stay within diesel + battery capacity.`);
+    }
+    if(state.storm && ticksSinceBrief%4===0){
+      pushAgent("warn", "Storm conditions active — solar output suppressed and wind elevated; pre-emptively holding more battery reserve is advisable.");
+    }
+ 
+    // Periodic plain-language briefing (every ~2h of sim time).
+    ticksSinceBrief++;
+    if(ticksSinceBrief>=8){
+      ticksSinceBrief=0;
+      const renewPct = Math.round(dispatch.cleanFraction*100);
+      let txt = `Serving ${dispatch.demand.toFixed(0)} kW, ${renewPct}% clean (direct solar ${state.solarKw.toFixed(0)} kW + wind ${state.windKw.toFixed(0)} kW, plus renewable-charged battery), battery at ${dispatch.batterySoc.toFixed(0)}% SOC.`;
+      if(dispatch.dieselKw>1) txt += ` Diesel covering ${dispatch.dieselKw.toFixed(0)} kW (${dispatch.fuel.toFixed(0)} L fuel left).`;
+      pushAgent("info", txt);
+    }
+  }
+ 
+  // A real grounded router over the decision trace, ported from
+  // ClaudeGridAdvisor._answer_fallback() in claude_advisor.py — not a
+  // keyword-to-latest-log-line lookup. This IS the artifact's honest
+  // ceiling: a published Claude Artifact cannot call the Anthropic API
+  // (its CSP blocks arbitrary network calls), so this deterministic router
+  // is what runs here. The reference Python backend (see README) calls the
+  // real Claude API over this same structured trace when ANTHROPIC_API_KEY
+  // is set — that live path can only be demonstrated by running it, not
+  // inside a published artifact.
+  const FALLBACK_PREFIX = "[Local fallback — deterministic, not Claude]";
+  function answerQuestion(q){
+    if(!history.length) return `${FALLBACK_PREFIX} No grid history logged yet this session.`;
+    const lower = q.toLowerCase();
+    const d = lastDispatch, s = lastState;
+ 
+    if(/protect|never shed|tier ?0|tier-0|critical load/.test(lower)){
+      const names = SECTORS.filter(x=>x.tier===0).map(x=>x.name).join(", ");
+      return `${FALLBACK_PREFIX} Tier-0 (never automatically shed): ${names}. The dispatch engine only sheds Tier-2 (deferrable) load first, then rotates through Tier-1 (essential); Tier-0 is excluded by construction, not a runtime check — see shedLoad().`;
+    }
+    if(/shed|blackout|outage|went out|lost power/.test(lower)){
+      const withShed = [...history].reverse().find(h=>h.dispatch.shedSectors.length);
+      if(!withShed) return `${FALLBACK_PREFIX} No load-shedding event in the last ${history.length} logged cycles.`;
+      const t = withShed.dispatch.trace;
+      return `${FALLBACK_PREFIX} Most recent load-shed event at ${fmtTime(withShed.state.t)}: ${t.decision}. Shed ${t.result.shedKw.toFixed(0)} kW across ${t.result.shedSectors.join(", ")||"no sectors"}. Cause: demand of ${t.observation.demandKw.toFixed(0)} kW exceeded renewables (${t.observation.renewableKw.toFixed(0)} kW) by more than battery + diesel capacity could cover after the reserve floor.`;
+    }
+    if(/fuel|diesel/.test(lower)){
+      if(/if |fail|what happens/.test(lower)){
+        return `${FALLBACK_PREFIX} Counterfactual (not a live re-simulation): if the diesel genset failed right now, the ${d.dieselKw.toFixed(0)} kW it currently supplies would have to come from battery (currently ${d.batterySoc.toFixed(0)}% SOC) down to the emergency floor, then from load-shedding. Given current demand of ${d.demand.toFixed(0)} kW against ${d.renewable.toFixed(0)} kW renewables, expect Tier-2 and likely Tier-1 shedding within 1-2 cycles — trigger the Genset flt scenario for a real, not hypothetical, simulation of this.`;
+      }
+      const eta = s.dieselResupplyEtaHours;
+      const resupplyNote = eta!=null ? ` A fuel delivery is in transit, ETA ~${eta.toFixed(0)}h.` : "";
+      return `${FALLBACK_PREFIX} Diesel is currently supplying ${d.dieselKw.toFixed(0)} kW with ${d.fuel.toFixed(0)} L remaining in the tank.${resupplyNote}`;
+    }
+    if(/battery|soc|state of charge/.test(lower)){
+      return `${FALLBACK_PREFIX} Battery is at ${d.batterySoc.toFixed(0)}% SOC. Normal reserve floor is ${RESERVE_FLOOR}%; the optimizer only discharges below that (down to a ${EMERGENCY_FLOOR}% emergency floor) to avoid shedding load.`;
+    }
+    if(/renewable|clean|solar|wind/.test(lower)){
+      return `${FALLBACK_PREFIX} Clean fraction (direct renewables + renewable-charged battery) is currently ${(d.cleanFraction*100).toFixed(0)}%; direct solar+wind share of served demand is ${(d.directRenFraction*100).toFixed(0)}%. These differ because diesel never charges the battery in this model, so stored energy is always renewable-sourced.`;
+    }
+    if(/risk|worst|worried|concern/.test(lower)){
+      if(d.tier0Risk) return `${FALLBACK_PREFIX} Highest current risk: Tier-0 critical load is at risk right now — all shed capacity is exhausted.`;
+      if(s.faults.length) return `${FALLBACK_PREFIX} Highest current risk: active sensor/equipment fault(s): ${s.faults.join(", ")}.`;
+      if(d.batterySoc<25) return `${FALLBACK_PREFIX} Highest current risk: battery SOC is low (${d.batterySoc.toFixed(0)}%) with limited buffer before shedding would be needed.`;
+      return `${FALLBACK_PREFIX} No elevated risk in the current cycle — system nominal.`;
+    }
+    if(/recommend|next action|what should|do next/.test(lower)){
+      if(d.tier0Risk) return `${FALLBACK_PREFIX} Recommended action: manual intervention (emergency diesel resupply or negotiated demand reduction) — automated shedding capacity is exhausted.`;
+      if(d.trace.actions[0] !== "No corrective action required this cycle.") return `${FALLBACK_PREFIX} System is already acting: ${d.trace.actions.join("; ")}`;
+      return `${FALLBACK_PREFIX} No action required — demand is fully served within normal operating margins.`;
+    }
+    if(/sensor|stuck|anomaly|fault/.test(lower)){
+      if(s.faults.length) return `${FALLBACK_PREFIX} Active fault(s): ${s.faults.join(", ")}. See the event log for the triage reasoning logged when this was first detected.`;
+      return `${FALLBACK_PREFIX} No sensor or equipment faults active in the current cycle.`;
+    }
+    return `${FALLBACK_PREFIX} Most recent decision (${fmtTime(s.t)}): ${d.trace.decision}. Ask about 'shed', 'fuel', 'battery', 'renewable', 'risk', 'recommend', or 'sensor' for a more specific grounded answer — this router reasons over the same decision trace the Python backend sends to Claude when ANTHROPIC_API_KEY is set.`;
+  }
+ 
+  /* ============================== RENDER ============================== */
+  const svgNS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs, parent){
+    const e = document.createElementNS(svgNS, tag);
+    for(const k in attrs) e.setAttribute(k, attrs[k]);
+    if(parent) parent.appendChild(e);
+    return e;
+  }
+  function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+ 
+  function renderGauges(){
+    const s = lastState, d = lastDispatch;
+    const wrap = document.getElementById('gauges');
+    const items = [
+      {ic:'solar', tag:'SOLAR PV', value:s.solarKw.toFixed(0), unit:'kW', sub:`${s.cloud?(s.cloud*100).toFixed(0):0}% cloud`, pct:s.solarKw/CAP.solar*100, flag:null},
+      {ic:'wind', tag:'WIND TURBINE', value:s.windKw.toFixed(0), unit:'kW', sub:`${s.windSpeed.toFixed(1)} m/s`, pct:s.windKw/CAP.wind*100, flag:null},
+      {ic:'battery', tag:'BATTERY SOC', value:d.batterySoc.toFixed(0), unit:'%', sub: d.batteryFlow>1?`dischg ${d.batteryFlow.toFixed(0)} kW`:(d.batteryFlow<-1?`chg ${(-d.batteryFlow).toFixed(0)} kW`:'idle'), pct:d.batterySoc, flag:null},
+      {ic:'diesel', tag:'DIESEL FUEL', value:d.fuel.toFixed(0), unit:'L', sub: s.faults.includes('diesel_genset_fault') ? 'genset fault' : (d.dieselKw>1?`run ${d.dieselKw.toFixed(0)} kW`:'standby'), pct:d.fuel/CAP.tank*100, flag: s.faults.includes('diesel_genset_fault')?'FLT':null},
+      {ic:'wind', tag:'DESAL FLOW', value:s.desalFlow.toFixed(0), unit:'L/m', sub: s.faults.includes('desal_flow_sensor_stuck')?'reading frozen':`${s.desalPressure.toFixed(2)} bar`, pct:Math.min(100,s.desalFlow/5), flag: s.faults.includes('desal_flow_sensor_stuck')?'FLT':null},
+    ];
+    wrap.innerHTML = items.map(it=>`
+      <tr>
+        <td class="tag">${it.tag}<span class="sub">${it.sub}</span></td>
+        <td class="val-cell"><span class="val">${it.value}<small>${it.unit}</small></span>${it.flag?` <span class="flag" style="color:var(--status-critical)">${it.flag}</span>`:''}</td>
+      </tr>
+      <tr class="bar-row"><td colspan="2"><div class="tbar"><i style="width:${Math.max(2,Math.min(100,it.pct))}%;background:var(--accent-${it.ic})"></i></div></td></tr>`).join('');
+  }
+ 
+  /* ============================== ISLAND MAP ============================== */
+  // Kailoa Island is fictional — invented for this demo, not a real place or
+  // a real utility's territory. Coordinates below are an illustrative layout
+  // (which asset sits where relative to coastline/high ground), not surveyed
+  // geography. Values shown on each pin are the same simulated readings
+  // driving the rest of the dashboard — see the header note for what "live"
+  // means here.
+  function smoothClosedPath(pts){
+    // Quadratic-midpoint smoothing through a closed point ring — turns a
+    // hand-placed polygon into an organic coastline without hand-authoring
+    // bezier control points.
+    const n = pts.length;
+    const mid = (a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+    const start = mid(pts[n-1], pts[0]);
+    let d = `M${start[0].toFixed(1)},${start[1].toFixed(1)} `;
+    for(let i=0;i<n;i++){
+      const p = pts[i], next = pts[(i+1)%n], m = mid(p,next);
+      d += `Q${p[0].toFixed(1)},${p[1].toFixed(1)} ${m[0].toFixed(1)},${m[1].toFixed(1)} `;
+    }
+    return d + 'Z';
+  }
+ 
+  const ISLAND_OUTLINE = [
+    [260,40],[350,50],[430,60],[490,95],[525,140],[555,180],[590,215],[605,255],
+    [585,295],[545,325],[495,340],[440,330],[390,340],[340,325],[300,335],
+    [255,310],[225,295],[195,305],[165,290],[150,260],[170,235],[145,210],
+    [115,185],[105,150],[120,115],[150,85],[190,60],[225,45],
+  ];
+  const RIDGE_PATH = 'M470,85 Q505,130 515,175 T530,235'; // high ground carrying the wind turbines
+ 
+  const MAP_ASSETS = [
+    {key:'solar', x:520, y:262, r:9, colorVar:'--accent-solar', label:'Solar PV',
+      value:(s,d)=>s.solarKw.toFixed(0)+' kW', flag:s=>null},
+    {key:'wind1', x:478, y:150, r:7, colorVar:'--accent-wind', label:'Wind ridge',
+      value:(s,d)=>s.windKw.toFixed(0)+' kW', flag:s=>null},
+    {key:'wind2', x:510, y:190, r:6, colorVar:'--accent-wind', label:'', value:()=>'', flag:()=>null, minor:true},
+    {key:'wind3', x:498, y:215, r:6, colorVar:'--accent-wind', label:'', value:()=>'', flag:()=>null, minor:true},
+    {key:'utility', x:420, y:232, r:9, colorVar:'--accent-battery', label:'Battery / genset',
+      value:(s,d)=>d.batterySoc.toFixed(0)+'% SOC, '+d.dieselKw.toFixed(0)+' kW diesel',
+      flag:s=>s.faults.includes('diesel_genset_fault')?'GENSET FLT':null},
+    {key:'hospital', x:330,y:196, r:8, colorVar:'--status-critical', label:'Hospital & Clinic',
+      value:(s,d)=>(s.sectorLoads['Hospital & Clinic']||0).toFixed(0)+' kW', flag:()=>null},
+    {key:'comms', x:400, y:90, r:6, colorVar:'--status-critical', label:'Comms tower',
+      value:(s,d)=>(s.sectorLoads['Comms & Emergency']||0).toFixed(0)+' kW', flag:()=>null},
+    {key:'desal', x:205, y:288, r:8, colorVar:'--status-critical', label:'Desalination plant',
+      value:(s,d)=>s.desalFlow.toFixed(0)+' L/min', flag:s=>s.faults.includes('desal_flow_sensor_stuck')?'SENSOR FLT':null},
+    {key:'villageN', x:262, y:88, r:7, colorVar:'--accent-battery', label:'Village (N)',
+      value:(s,d)=>(s.sectorLoads['Village Households (N)']||0).toFixed(0)+' kW', flag:()=>null},
+    {key:'school', x:302, y:132, r:6, colorVar:'--accent-battery', label:'School',
+      value:(s,d)=>(s.sectorLoads['School']||0).toFixed(0)+' kW', flag:()=>null},
+    {key:'villageS', x:300, y:322, r:7, colorVar:'--accent-battery', label:'Village (S)',
+      value:(s,d)=>(s.sectorLoads['Village Households (S)']||0).toFixed(0)+' kW', flag:()=>null},
+    {key:'harbor', x:145, y:255, r:8, colorVar:'--ink-muted', label:'Harbor',
+      value:(s,d)=>((s.sectorLoads['Fishery Cold Storage']||0)+(s.sectorLoads['Ice Plant']||0)+(s.sectorLoads['EV & Boat Charging']||0)).toFixed(0)+' kW comb.', flag:()=>null},
+    {key:'tourism', x:490, y:322, r:7, colorVar:'--ink-muted', label:'Tourism cove',
+      value:(s,d)=>(s.sectorLoads['Tourism / Commercial']||0).toFixed(0)+' kW', flag:()=>null},
+  ];
+ 
+  function initMapSvg(){
+    const svg = document.getElementById('mapSvg');
+    svg.innerHTML='';
+    el('rect',{x:0,y:0,width:760,height:380,class:'map-water'}, svg);
+    // a couple of faint concentric shoreline contours for depth
+    el('path',{class:'map-water-line', d:smoothClosedPath(ISLAND_OUTLINE.map(([x,y])=>{
+      const cx=350,cy=200; return [cx+(x-cx)*1.06, cy+(y-cy)*1.06];
+    }))}, svg);
+    el('path',{class:'map-land', d:smoothClosedPath(ISLAND_OUTLINE)}, svg);
+    el('path',{class:'map-ridge', d:RIDGE_PATH}, svg);
+    el('text',{x:600,y:70,class:'chart-axis-label', 'font-size':10, 'text-anchor':'end'}, svg).textContent = 'PACIFIC — ILLUSTRATIVE, NOT TO SCALE';
+ 
+    const layer = el('g',{id:'mapPins'}, svg);
+    MAP_ASSETS.forEach(a=>{
+      const grp = el('g',{class:'map-pin', id:'pin-'+a.key}, layer);
+      el('circle',{cx:a.x, cy:a.y, r:a.r, fill:`var(${a.colorVar})`}, grp);
+      if(!a.minor){
+        const side = a.x > 560 ? -1 : 1; // flip label side near the east edge so text stays on-canvas
+        const lx = a.x + side*(a.r+6);
+        el('text',{class:'p-label', x:lx, y:a.y-3, 'text-anchor': side>0?'start':'end'}, grp).textContent = a.label;
+        el('text',{class:'p-value', id:'pinval-'+a.key, x:lx, y:a.y+10, 'text-anchor': side>0?'start':'end'}, grp);
+        el('text',{class:'p-flag', id:'pinflag-'+a.key, x:lx, y:a.y+22, 'text-anchor': side>0?'start':'end'}, grp);
+      }
+    });
+ 
+    const legend = document.getElementById('mapLegend');
+    legend.innerHTML = [
+      ['--accent-solar','Solar'], ['--accent-wind','Wind'], ['--accent-battery','Battery / village load'],
+      ['--status-critical','Tier 0 critical'], ['--ink-muted','Tier 2 / harbor & tourism'],
+    ].map(([v,l])=>`<span class="item"><span class="sw" style="background:var(${v})"></span>${l}</span>`).join('');
+  }
+ 
+  function renderMap(){
+    const s = lastState, d = lastDispatch;
+    MAP_ASSETS.forEach(a=>{
+      if(a.minor) return;
+      const val = document.getElementById('pinval-'+a.key);
+      const flagEl = document.getElementById('pinflag-'+a.key);
+      if(val) val.textContent = a.value(s,d);
+      const flag = a.flag(s,d);
+      if(flagEl) flagEl.textContent = flag || '';
+    });
+  }
+ 
+  const FLOW_NODES = {
+    solar:{x:40,y:26,w:96,h:40,label:'Solar'},
+    wind:{x:40,y:92,w:96,h:40,label:'Wind'},
+    diesel:{x:40,y:158,w:96,h:40,label:'Diesel'},
+    battery:{x:300,y:158,w:110,h:40,label:'Battery'},
+    bus:{x:300,y:78,w:110,h:44,label:'Island Bus'},
+    t0:{x:560,y:20,w:130,h:38,label:'T0 · Critical'},
+    t1:{x:560,y:90,w:130,h:38,label:'T1 · Essential'},
+    t2:{x:560,y:160,w:130,h:38,label:'T2 · Deferrable'},
+  };
+ 
+  function nodeCenter(n){ return {x:n.x+n.w/2, y:n.y+n.h/2}; }
+  // Orthogonal (right-angle) routing, like a real one-line/schematic diagram,
+  // rather than a smooth bezier — the single biggest tell that separates a
+  // circuit/SCADA drawing from a generic app "flow" graphic.
+  function edgePath(a,b){
+    const pa = {x:a.x+a.w, y:a.y+a.h/2}, pb = {x:b.x, y:b.y+b.h/2};
+    if(Math.abs(pa.y-pb.y) < 0.5) return `M${pa.x},${pa.y} L${pb.x},${pb.y}`;
+    const mx = (pa.x+pb.x)/2;
+    return `M${pa.x},${pa.y} L${mx},${pa.y} L${mx},${pb.y} L${pb.x},${pb.y}`;
+  }
+ 
+  function initFlowSvg(){
+    const svg = document.getElementById('flowSvg');
+    svg.innerHTML='';
+    // edges first (behind nodes)
+    const edgeDefs = [
+      ['solar','bus','solar'], ['wind','bus','wind'], ['diesel','bus','diesel'],
+      ['battery','bus','battery-out'], ['bus','battery','battery-in'],
+      ['bus','t0','t0'], ['bus','t1','t1'], ['bus','t2','t2'],
+    ];
+    const g = el('g',{id:'edgeLayer'}, svg);
+    edgeDefs.forEach(([a,b,key])=>{
+      let d;
+      if(key==='battery-in') d = edgePath(FLOW_NODES.bus, FLOW_NODES.battery);
+      else if(key==='battery-out') d = edgePath(FLOW_NODES.battery, FLOW_NODES.bus);
+      else d = edgePath(FLOW_NODES[a], FLOW_NODES[b]);
+      el('path',{class:'flow-edge', id:'edge-'+key, d, 'stroke-width':2, opacity:0.25, stroke:'var(--border)'}, g);
+    });
+    // nodes
+    const nodeLayer = el('g',{id:'nodeLayer'}, svg);
+    Object.entries(FLOW_NODES).forEach(([key,n])=>{
+      const grp = el('g',{class:'flow-node', id:'node-'+key}, nodeLayer);
+      el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:2,'stroke-width':1.2}, grp);
+      el('text',{class:'n-label', x:n.x+10, y:n.y+15}, grp).textContent = n.label;
+      el('text',{class:'n-value', id:'nval-'+key, x:n.x+10, y:n.y+31}, grp);
+      el('text',{class:'flow-shed-badge', id:'nshed-'+key, x:n.x+n.w-8, y:n.y+15, 'text-anchor':'end'}, grp);
+    });
+  }
+ 
+  function styleColor(varName){ return `var(${varName})`; }
+ 
+  function renderFlow(){
+    const s=lastState, d=lastDispatch;
+    const setEdge = (key, kw, colorVar, max)=>{
+      const p = document.getElementById('edge-'+key);
+      const on = kw>1;
+      const w = on ? Math.max(2, Math.min(9, 2+ (kw/max)*7)) : 2;
+      p.setAttribute('stroke-width', w);
+      p.setAttribute('opacity', on ? 0.9 : 0.18);
+      p.setAttribute('stroke', on ? `var(${colorVar})` : 'var(--border)');
+      p.classList.toggle('animated', on);
+    };
+    setEdge('solar', s.solarKw, '--accent-solar', CAP.solar);
+    setEdge('wind', s.windKw, '--accent-wind', CAP.wind);
+    setEdge('diesel', d.dieselKw, '--accent-diesel', CAP.diesel);
+    setEdge('battery-out', Math.max(0,d.batteryFlow), '--accent-battery', 300);
+    setEdge('battery-in', Math.max(0,-d.batteryFlow), '--accent-battery', 300);
+ 
+    const tierLoad = {t0:0,t1:0,t2:0};
+    SECTORS.forEach(sec=>{ tierLoad['t'+sec.tier] += (s.sectorLoads[sec.name]||0); });
+    // Tier edges use a neutral ink gradient (priority, not energy source) so they
+    // never compete with the categorical solar/wind/battery/diesel palette.
+    setEdge('t0', tierLoad.t0, '--ink-primary', 500);
+    setEdge('t1', tierLoad.t1, '--ink-secondary', 500);
+    setEdge('t2', tierLoad.t2, '--ink-muted', 500);
+ 
+    document.getElementById('nval-solar').textContent = s.solarKw.toFixed(0)+' kW';
+    document.getElementById('nval-wind').textContent = s.windKw.toFixed(0)+' kW';
+    document.getElementById('nval-diesel').textContent = (s.faults.includes('diesel_genset_fault')? 'FAULT' : d.dieselKw.toFixed(0)+' kW');
+    document.getElementById('nval-battery').textContent = d.batterySoc.toFixed(0)+'% SOC';
+    document.getElementById('nval-bus').textContent = d.demand.toFixed(0)+' kW total';
+    document.getElementById('nval-t0').textContent = tierLoad.t0.toFixed(0)+' kW';
+    document.getElementById('nval-t1').textContent = tierLoad.t1.toFixed(0)+' kW';
+    document.getElementById('nval-t2').textContent = tierLoad.t2.toFixed(0)+' kW';
+ 
+    ['t0','t1','t2'].forEach(k=>{ document.getElementById('nshed-'+k).textContent=''; });
+    if(d.shedSectors.length){
+      d.shedSectors.forEach(name=>{
+        const sec = SECTORS.find(x=>x.name===name);
+        if(sec) document.getElementById('nshed-'+('t'+sec.tier)).textContent = 'SHEDDING';
+      });
+    }
+  }
+ 
+  // The chart is the single most expensive render step: it wipes and rebuilds
+  // the whole SVG (gridlines, 4 series paths + area fills, axis labels, hover
+  // overlay) on every call. tick() can fire faster than the display repaints
+  // at high simulation speed, and redrawing more often than the screen can
+  // show is pure wasted work — so tick()/render() no longer call renderChart()
+  // directly. They call requestChartRender(), which coalesces any number of
+  // calls within one frame into a single rebuild via requestAnimationFrame,
+  // capping chart re-renders at the display's actual refresh rate regardless
+  // of simulation speed. This also means chart rebuilds automatically stop
+  // while the tab is backgrounded, since browsers don't run rAF callbacks for
+  // hidden tabs — a real CPU/battery saving for a dashboard left running.
+  let chartRafPending = false;
+  function requestChartRender(){
+    if(chartRafPending) return;
+    chartRafPending = true;
+    requestAnimationFrame(()=>{
+      chartRafPending = false;
+      renderChart();
+    });
+  }
+ 
+  const CHART_SERIES = [
+    {key:'solarKw', label:'Solar', color:'var(--accent-solar)', from:h=>h.state.solarKw},
+    {key:'windKw', label:'Wind', color:'var(--accent-wind)', from:h=>h.state.windKw},
+    {key:'dieselKw', label:'Diesel', color:'var(--accent-diesel)', from:h=>h.dispatch.dieselKw},
+    {key:'demandKw', label:'Demand', color:'var(--ink-secondary)', dashed:true, from:h=>h.dispatch.demand},
+  ];
+ 
+  function renderChartLegend(){
+    document.getElementById('chartLegend').innerHTML = CHART_SERIES.map(s=>`
+      <span class="item"><span class="swatch${s.dashed?' dashed':''}" style="${s.dashed?'':'background:'+s.color}"></span>${s.label}</span>`).join('');
+  }
+ 
+  let chartLayout = null;
+  function renderChart(){
+    const svg = document.getElementById('chartSvg');
+    if(!history.length) return;
+    const W=900,H=230, padL=8, padR=8, padT=10, padB=22;
+    const plotW = W-padL-padR, plotH = H-padT-padB;
+    const n = history.length;
+    const maxV = Math.max(50, ...history.flatMap(h=>CHART_SERIES.map(s=>s.from(h))));
+    const x = i => padL + (n<=1?0:(i/(n-1))*plotW);
+    const y = v => padT + plotH - (v/maxV)*plotH;
+ 
+    svg.innerHTML='';
+    // gridlines
+    const gl = el('g',{},svg);
+    for(let k=0;k<=3;k++){
+      const yy = padT + plotH*k/3;
+      el('line',{class:'gridline', x1:padL, x2:W-padR, y1:yy, y2:yy}, gl);
+    }
+    CHART_SERIES.forEach(s=>{
+      const pts = history.map((h,i)=>[x(i), y(s.from(h))]);
+      const d = pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+      const path = el('path',{class:'series-path', d, stroke:s.color}, svg);
+      if(s.dashed) path.setAttribute('stroke-dasharray','5 4');
+      if(!s.dashed){
+        const areaD = d + ` L${x(n-1).toFixed(1)},${(padT+plotH).toFixed(1)} L${x(0).toFixed(1)},${(padT+plotH).toFixed(1)} Z`;
+        el('path',{class:'series-area', d:areaD, fill:s.color}, svg);
+      }
+    });
+    // hover line
+    const hoverLine = el('line',{class:'chart-hover-line', id:'hoverLine', x1:0,x2:0,y1:padT,y2:padT+plotH}, svg);
+    // x-axis time labels (start / mid / end)
+    [0, Math.floor((n-1)/2), n-1].forEach(i=>{
+      if(i<0||i>=n) return;
+      el('text',{class:'chart-axis-label', x:x(i), y:H-6, 'text-anchor': i===0?'start':(i===n-1?'end':'middle')}, svg).textContent =
+        history[i].state.t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+    });
+ 
+    chartLayout = {W,H,padL,padR,padT,padB,plotW,plotH,x,y,maxV,n};
+ 
+    // hover interaction
+    const overlay = el('rect',{x:padL,y:padT,width:plotW,height:plotH,fill:'transparent'}, svg);
+    overlay.style.cursor='crosshair';
+    overlay.onmousemove = (ev)=>onChartHover(ev, svg);
+    overlay.onmouseleave = ()=>{ hoverLine.style.opacity=0; document.getElementById('chartTooltip').style.opacity=0; };
+  }
+ 
+  function onChartHover(ev, svg){
+    if(!chartLayout) return;
+    const rect = svg.getBoundingClientRect();
+    const px = (ev.clientX-rect.left) / rect.width * chartLayout.W;
+    const idx = Math.round((px-chartLayout.padL)/chartLayout.plotW*(chartLayout.n-1));
+    const clamped = Math.max(0, Math.min(chartLayout.n-1, idx));
+    const h = history[clamped];
+    if(!h) return;
+    const hoverLine = document.getElementById('hoverLine');
+    const xx = chartLayout.x(clamped);
+    hoverLine.setAttribute('x1',xx); hoverLine.setAttribute('x2',xx);
+    hoverLine.style.opacity = 1;
+    const tt = document.getElementById('chartTooltip');
+    tt.innerHTML = `<div style="margin-bottom:4px;color:var(--ink-muted)">${h.state.t.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})}</div>` +
+      CHART_SERIES.map(s=>`<div class="tt-row"><span style="color:${s.color}">${s.label}</span><span>${s.from(h).toFixed(0)} kW</span></div>`).join('');
+    const wrapRect = svg.parentElement.getBoundingClientRect();
+    const px2 = (xx/chartLayout.W)*wrapRect.width;
+    tt.style.left = Math.min(wrapRect.width-140, Math.max(4,px2+8))+'px';
+    tt.style.top = '6px';
+    tt.style.opacity = 1;
+  }
+ 
+  // Full rebuild — used once at startup only. Later updates go through
+  // pushAgent()'s incremental insert.
+  function renderAgent(){
+    const feed = document.getElementById('agentFeed');
+    feed.innerHTML = agentLog.slice(0,30).map(agentEntryHtml).join('') ||
+      `<tr class="eventlog-empty-row"><td colspan="3" class="eventlog-empty">No events logged.</td></tr>`;
+  }
+ 
+  function renderSectors(){
+    const s = lastState, d = lastDispatch;
+    const tbody = document.getElementById('sectorsBody');
+    tbody.innerHTML = SECTORS.map(sec=>{
+      const load = s.sectorLoads[sec.name]||0;
+      const isShed = d.shedSectors.includes(sec.name);
+      const barColor = sec.tier===0?'var(--status-critical)':(sec.tier===1?'var(--accent-battery)':'var(--ink-muted)');
+      return `<tr>
+        <td>${sec.name}</td>
+        <td><span class="tier-tag t${sec.tier}">T${sec.tier}</span></td>
+        <td class="kw">${load.toFixed(0)} kW</td>
+        <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${(sec.shed*100).toFixed(0)}%;background:${barColor}"></div></div><span class="kw" style="color:var(--ink-muted)">${(sec.shed*100).toFixed(0)}%</span></div></td>
+        <td><span class="status-chip ${isShed?'shed':'normal'}"><span class="d"></span>${isShed?'Shedding':'Normal'}</span></td>
+      </tr>`;
+    }).join('');
+  }
+ 
+  function renderHeader(){
+    document.getElementById('simTime').textContent = simT.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+    document.getElementById('simDate').textContent = simT.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+    document.getElementById('telemetryUpdated').textContent = simT.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
+ 
+    const d = lastDispatch, s = lastState;
+    const pill = document.getElementById('healthPill'), label = document.getElementById('healthLabel');
+    let cls='good', text='Nominal';
+    if(d.tier0Risk){ cls='critical'; text='Critical — Tier-0 at risk'; }
+    else if(d.shedSectors.length || s.faults.length){ cls='warn'; text='Degraded'; }
+    pill.className = 'health '+cls; label.textContent = text;
+ 
+    // System frequency/voltage are illustrative EMS-style readouts derived
+    // from grid stress (real islanded grids sag in frequency under a supply
+    // deficit) — not an independently modeled electromechanical simulation.
+    const stress = d.tier0Risk ? 1 : (d.shedKw>1 ? Math.min(1, d.shedKw/150) : 0);
+    const freq = 60.00 - stress*0.42 - (d.dieselKw>CAP.diesel*0.9 ? 0.05 : 0);
+    const volt = 13.80 - stress*0.55 - (d.dieselKw>CAP.diesel*0.9 ? 0.08 : 0);
+    const freqEl = document.getElementById('statFreq'), voltEl = document.getElementById('statVoltage');
+    freqEl.textContent = freq.toFixed(2)+' Hz';
+    voltEl.className = 'val mono' + (stress>0.6?' critical':(stress>0.15?' warn':''));
+    voltEl.textContent = volt.toFixed(2)+' kV';
+    freqEl.className = 'val mono' + (stress>0.6?' critical':(stress>0.15?' warn':''));
+ 
+    document.querySelectorAll('.scenario-btn').forEach(b=>{
+      b.dataset.armed = (b.dataset.scenario===scenario) ? 'true' : 'false';
+    });
+  }
+ 
+  function render(){
+    renderGauges();
+    renderMap();
+    renderFlow();
+    requestChartRender(); // throttled to one rebuild per animation frame — see definition above
+    renderSectors();
+    renderHeader();
+    renderDecisionBar();
+  }
+ 
+  /* ============================== DECISION BAR / WHY / IMPACT ============================== */
+  function renderDecisionBar(){
+    const d = lastDispatch;
+    const riskEl = document.getElementById('decisionRisk'), riskLabel = document.getElementById('decisionRiskLabel');
+    let cls='good', label='Nominal';
+    if(d.tier0Risk){ cls='critical'; label='Critical'; }
+    else if(d.shedSectors.length || lastState.faults.length){ cls='warn'; label='Degraded'; }
+    riskEl.className = 'decision-risk '+cls;
+    riskLabel.textContent = label;
+    document.getElementById('decisionText').textContent = d.trace.decision;
+    if(!document.getElementById('whyDrawer').hidden) renderTraceDrawer();
+    if(!document.getElementById('impactDrawer').hidden) renderImpactDrawer();
+  }
+ 
+  function traceBlock(label, bodyHtml){
+    return `<div class="trace-block"><div class="t-label">${label}</div><div class="t-body">${bodyHtml}</div></div>`;
+  }
+ 
+  function renderTraceDrawer(){
+    const t = lastDispatch.trace;
+    const o = t.observation, r = t.result;
+    document.getElementById('traceGrid').innerHTML = [
+      traceBlock('Observation', `Demand <code>${o.demandKw.toFixed(0)} kW</code> vs. renewables <code>${o.renewableKw.toFixed(0)} kW</code>
+        (residual <code>${o.residualKw>=0?'+':''}${o.residualKw.toFixed(0)} kW</code>).
+        Battery was <code>${o.batterySocPctBefore.toFixed(0)}%</code> SOC before this cycle.
+        Diesel ${o.dieselAvailable?'available':'<strong style="color:var(--status-critical)">unavailable (fault)</strong>'}.
+        ${o.sensorFaults.length?`Active faults: <code>${o.sensorFaults.join(', ')}</code>.`:'No sensor faults.'}`),
+      traceBlock('Constraints considered', `<ul>${t.constraints.map(c=>`<li>${c}</li>`).join('')}</ul>`),
+      traceBlock('Decision', `<strong>${t.decision}</strong>`),
+      traceBlock('Actions taken', `<ul>${t.actions.map(a=>`<li>${a}</li>`).join('')}</ul>`),
+      traceBlock('Result', `Battery now <code>${r.batterySocPctAfter.toFixed(0)}%</code> SOC ·
+        diesel <code>${r.dieselKw.toFixed(0)} kW</code> ·
+        shed <code>${r.shedKw.toFixed(0)} kW</code>${r.shedSectors.length?` (${r.shedSectors.join(', ')})`:''} ·
+        clean fraction <code>${(r.renewableFraction*100).toFixed(0)}%</code>
+        ${r.tier0Risk?'· <strong style="color:var(--status-critical)">Tier-0 at risk</strong>':''}`),
+    ].join('');
+  }
+ 
+  function renderImpactDrawer(){
+    if(!history.length) return;
+    const n = history.length;
+    const hoursSpan = n*STEP_H;
+    let dieselKwh=0, naiveKwh=0, shedKwh=0, renewSum=0, minSoc=100, tier0Ticks=0;
+    for(const h of history){
+      dieselKwh += h.dispatch.dieselKw*STEP_H;
+      naiveKwh += h.dispatch.demand*STEP_H;
+      shedKwh += h.dispatch.shedKw*STEP_H;
+      renewSum += h.dispatch.cleanFraction;
+      minSoc = Math.min(minSoc, h.dispatch.batterySoc);
+      if(h.dispatch.tier0Risk) tier0Ticks++;
+    }
+    const fuelUsedL = dieselKwh*FUEL_L_PER_KWH, naiveFuelL = naiveKwh*FUEL_L_PER_KWH;
+    const fuelSavedL = naiveFuelL - fuelUsedL;
+    const fuelSavedPct = naiveFuelL>0 ? 100*fuelSavedL/naiveFuelL : 0;
+    const avgClean = 100*renewSum/n;
+    const tier0ProtectedPct = 100*(n-tier0Ticks)/n;
+    const shedEvents = agentLog.filter(a=>a.sev==='warn'||a.sev==='critical').length;
+    const stat = (label, value, sub)=>`<div class="impact-stat"><div class="i-label">${label}</div><div class="i-value">${value}</div>${sub?`<div class="i-sub">${sub}</div>`:''}</div>`;
+    document.getElementById('impactGrid').innerHTML = [
+      stat('Window', `${hoursSpan.toFixed(1)}h`, `${n} ticks logged this session`),
+      stat('Critical load protected', `${tier0ProtectedPct.toFixed(1)}%`, tier0Ticks ? `at risk on ${tier0Ticks} of ${n} ticks` : 'never at risk this session'),
+      stat('Diesel fuel saved', `${fuelSavedPct.toFixed(0)}%`, `${fuelSavedL.toFixed(0)} L avoided (${fuelUsedL.toFixed(0)} L used vs. ${naiveFuelL.toFixed(0)} L naive baseline)`),
+      stat('Avg. clean fraction', `${avgClean.toFixed(0)}%`, 'direct renewables + renewable-charged battery'),
+      stat('Energy shed', `${shedKwh.toFixed(0)} kWh`, `${(100*shedKwh/(naiveKwh||1)).toFixed(1)}% of demand`),
+      stat('Min. battery SOC', `${minSoc.toFixed(0)}%`, `reserve floor ${RESERVE_FLOOR}%`),
+      stat('Tier-0 risk ticks', `${tier0Ticks}`, tier0Ticks ? 'critical load at risk' : 'never exhausted shed capacity'),
+    ].join('');
+  }
+ 
+  /* ============================== INIT / LOOP / EVENTS ============================== */
+  initFlowSvg();
+  initMapSvg();
+  // seed some history so the chart isn't empty on load
+  for(let i=0;i<32;i++) tick();
+  render(); renderAgent();
+ 
+  let timer=null;
+  function scheduleLoop(){
+    if(timer) clearInterval(timer);
+    if(speed<=0) return;
+    const intervalMs = Math.max(60, 260/speed);
+    timer = setInterval(tick, intervalMs);
+  }
+  scheduleLoop();
+ 
+  document.getElementById('speedSeg').addEventListener('click', e=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    speed = Number(btn.dataset.speed);
+    document.querySelectorAll('#speedSeg button').forEach(b=>b.classList.toggle('active', b===btn));
+    scheduleLoop();
+  });
+ 
+  document.getElementById('viewSeg').addEventListener('click', e=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    const view = btn.dataset.view;
+    document.querySelectorAll('#viewSeg button').forEach(b=>b.classList.toggle('active', b===btn));
+    document.getElementById('mapView').hidden = view!=='map';
+    document.getElementById('schematicView').hidden = view!=='schematic';
+    document.getElementById('viewTitle').innerHTML = view==='map'
+      ? 'Site map <span class="aux">Kailoa Island — fictional, illustrative layout</span>'
+      : 'One-line diagram <span class="aux">instantaneous dispatch</span>';
+  });
+ 
+  document.querySelectorAll('.scenario-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const sc = btn.dataset.scenario;
+      if(sc==='clear'){ scenario=null; scenarioTicksLeft=0; stuckVal=null; pushAgent('info','Active scenario cleared manually by operator.'); return; }
+      scenario = sc; scenarioTicksLeft = sc==='generator_fault' ? 6 : (sc==='sensor_stuck'?20:28);
+      stuckVal = null;
+      const names = {storm:'Storm', generator_fault:'Generator fault', sensor_stuck:'Sensor fault'};
+      pushAgent('warn', `Scenario triggered by operator: ${names[sc]}.`);
+    });
+  });
+ 
+  document.getElementById('askBtn').addEventListener('click', submitAsk);
+  document.getElementById('askInput').addEventListener('keydown', e=>{ if(e.key==='Enter') submitAsk(); });
+  // The event log renders entry text as HTML (agentEntryHtml in advisor.js),
+  // so anything that echoes free-typed operator input has to escape it first
+  // — otherwise typing e.g. "<img src=x onerror=...>" into the ask box would
+  // execute as markup instead of displaying as a question.
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+  function submitAsk(){
+    const input = document.getElementById('askInput');
+    const q = input.value.trim();
+    if(!q) return;
+    pushAgent('info', `<strong>Operator asked:</strong> "${escapeHtml(q)}"`);
+    const ans = answerQuestion(q);
+    pushAgent('info', ans);
+    input.value='';
+  }
+ 
+  /* ============================== WHY / IMPACT / ARCHITECTURE UI ============================== */
+  function toggleDrawer(id, btnId, onOpenRender){
+    const drawer = document.getElementById(id), btn = document.getElementById(btnId);
+    const opening = drawer.hidden;
+    drawer.hidden = !opening;
+    btn.setAttribute('aria-expanded', String(opening));
+    if(opening) onOpenRender();
+  }
+  document.getElementById('whyBtn').addEventListener('click', ()=>toggleDrawer('whyDrawer','whyBtn',renderTraceDrawer));
+  document.getElementById('impactBtn').addEventListener('click', ()=>toggleDrawer('impactDrawer','impactBtn',renderImpactDrawer));
+  document.getElementById('archBtn').addEventListener('click', ()=>{ document.getElementById('archOverlay').hidden = false; });
+  document.getElementById('archCloseBtn').addEventListener('click', ()=>{ document.getElementById('archOverlay').hidden = true; });
+  document.getElementById('archOverlay').addEventListener('click', e=>{ if(e.target.id==='archOverlay') e.currentTarget.hidden = true; });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') document.getElementById('archOverlay').hidden = true; });
+ 
+  /* ============================== CRISIS DEMO MODE ============================== */
+  // A deterministic, scripted 7-phase sequence a presenter can run with one
+  // click and narrate against, instead of describing failure modes in
+  // slides. Every step drives the same tick()/dispatch() the rest of the
+  // dashboard uses — nothing here is faked or pre-recorded.
+  const DEMO_SCRIPT = [
+    {ticks:8, caption:'Normal operation — solar and wind cover most of demand, battery holding steady.'},
+    {ticks:28, action:()=>{ scenario='storm'; scenarioTicksLeft=28; stuckVal=null; }, caption:'Storm arriving — cloud cover spikes, solar output collapses, wind rises.'},
+    {ticks:10, caption:'Battery discharging to absorb the shortfall as solar stays suppressed.'},
+    {ticks:6, action:()=>{ scenario='generator_fault'; scenarioTicksLeft=6; }, caption:'Diesel genset fails mid-storm — a compounding fault on top of the weather event.'},
+    {ticks:6, caption:'Battery drawn into emergency reserve; deferrable (Tier-2) load begins shedding.'},
+    {ticks:10, action:()=>{ scenario=null; scenarioTicksLeft=0; }, caption:'Faults clear — genset restored, storm passing. Recovery begins.'},
+    {ticks:10, caption:'Back to nominal. Open "24h impact" to see the tally from this run.'},
+  ];
+  function demoRenderControls(){
+    const wrap = document.getElementById('demoControls');
+    if(!demo){
+      wrap.innerHTML = `<button class="btn" id="demoStartBtn" aria-label="Run scripted crisis demo">Run crisis demo</button>`;
+      document.getElementById('demoStartBtn').addEventListener('click', demoStart);
+      return;
+    }
+    const stepLabel = `Step ${demo.step+1}/${DEMO_SCRIPT.length}`;
+    const pauseLabel = demo.paused ? 'Resume crisis demo' : 'Pause crisis demo';
+    wrap.innerHTML = `
+      <span class="decision-label" style="align-self:center;" aria-live="polite">${stepLabel}</span>
+      <button class="btn" id="demoPauseBtn" aria-label="${pauseLabel}">${demo.paused?'Resume':'Pause'}</button>
+      <button class="btn" id="demoSkipBtn" aria-label="Skip to next demo step">Skip</button>
+      <button class="btn" id="demoResetBtn" aria-label="Reset crisis demo">Reset</button>`;
+    document.getElementById('demoPauseBtn').addEventListener('click', demoTogglePause);
+    document.getElementById('demoSkipBtn').addEventListener('click', ()=>demoAdvance(true));
+    document.getElementById('demoResetBtn').addEventListener('click', demoReset);
+  }
+ 
+  function demoStart(){
+    demo = {step:-1, ticksLeft:0, savedSpeed:speed, paused:false};
+    pushAgent('info', 'Crisis demo started — scripted, deterministic sequence driving the same dispatch engine as manual scenario buttons.');
+    speed = 4;
+    document.querySelectorAll('#speedSeg button').forEach(b=>b.classList.toggle('active', Number(b.dataset.speed)===4));
+    scheduleLoop();
+    demoAdvance(false);
+  }
+ 
+  function demoAdvance(isSkip){
+    demo.step++;
+    if(demo.step >= DEMO_SCRIPT.length){ demoReset(); return; }
+    const step = DEMO_SCRIPT[demo.step];
+    demo.ticksLeft = step.ticks;
+    if(step.action) step.action();
+    pushAgent(isSkip?'info':'warn', `Demo step ${demo.step+1}/${DEMO_SCRIPT.length}: ${step.caption}`);
+    demoRenderControls();
+  }
+ 
+  function demoTogglePause(){
+    demo.paused = !demo.paused;
+    speed = demo.paused ? 0 : 4;
+    scheduleLoop();
+    demoRenderControls();
+  }
+ 
+  function demoReset(){
+    if(demo){ speed = demo.savedSpeed; }
+    demo = null;
+    scenario = null; scenarioTicksLeft = 0; stuckVal = null;
+    document.querySelectorAll('#speedSeg button').forEach(b=>b.classList.toggle('active', Number(b.dataset.speed)===speed));
+    scheduleLoop();
+    demoRenderControls();
+  }
+ 
+  // Called from tick() via demoTick() below so the script advances in
+  // simulation time (ticks), not wall-clock time — pausing the sim pauses the demo too.
+  function demoTick(){
+    if(!demo || demo.paused) return;
+    demo.ticksLeft--;
+    if(demo.ticksLeft <= 0) demoAdvance(false);
+  }
+ 
+  demoRenderControls();
+ 
+  renderChartLegend();
+})();
+</script>
+ 
+Downloaded triton_5.html Show in Finder
